@@ -1,0 +1,124 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract HotelBooking {
+    // 定义酒店结构体，包含酒店的基本信息
+    struct Hotel {
+        uint id; // 酒店ID
+        string name; // 酒店名称
+        string description; // 酒店描述
+        uint pricePerNight; // 每晚价格
+        bool isAvailable; // 酒店是否可用
+    }
+
+    // 定义预订结构体，包含预订的详细信息
+    struct Booking {
+        uint id; // 预订ID
+        uint hotelId; // 酒店ID
+        address guest; // 预订者地址
+        uint checkInDate; // 入住日期
+        uint checkOutDate; // 离店日期
+    }
+
+    // 定义评价结构体，包含评价的详细信息
+    struct Review {
+        uint id; // 评价ID
+        uint hotelId; // 酒店ID
+        address reviewer; // 评价者地址
+        string content; // 评价内容
+        uint rating; // 评价分数
+    }
+
+    // 酒店、预订和评价的数组，用于存储所有记录
+    Hotel[] public hotels;
+    Booking[] public bookings;
+    Review[] public reviews;
+
+    // 映射关系，用于存储特定用户的所有预订和特定酒店的所有评价
+    mapping(address => Booking[]) public guestBookings;
+    mapping(uint => Review[]) public hotelReviews;
+
+    // 事件声明，用于在区块链上记录重要操作
+    event HotelCreated(uint id, string name, string description, uint pricePerNight);
+    event BookingMade(uint id, uint hotelId, address guest, uint checkInDate, uint checkOutDate);
+    event ReviewAdded(uint id, uint hotelId, address reviewer, string content, uint rating);
+
+    // 只有合约所有者可以执行的修饰符
+    modifier onlyOwner() {
+        require(msg.sender == owner, unicode"只有所有者可以执行此操作");
+        _;
+    }
+
+    // 合约所有者的地址
+    address private owner;
+
+    // 构造函数，初始化合约所有者
+    constructor() {
+        owner = msg.sender;
+    }
+
+    // 创建新酒店的函数
+    function createHotel(string memory _name, string memory _description, uint _pricePerNight) public onlyOwner {
+        Hotel memory newHotel = Hotel({
+            id: hotels.length + 1,
+            name: _name,
+            description: _description,
+            pricePerNight: _pricePerNight,
+            isAvailable: true
+        });
+        hotels.push(newHotel);
+        emit HotelCreated(newHotel.id, newHotel.name, newHotel.description, newHotel.pricePerNight);
+    }
+
+    // 预订酒店的函数
+    function bookHotel(uint _hotelId, uint _checkInDate, uint _checkOutDate) public payable {
+        require(_checkOutDate > _checkInDate, unicode"离店日期必须在入住日期之后");
+        require(hotels[_hotelId].isAvailable, unicode"酒店不可用");
+        require(msg.value == (_checkOutDate - _checkInDate + 1) * hotels[_hotelId].pricePerNight, unicode"支付金额不正确");
+
+        Hotel storage hotel = hotels[_hotelId];
+        hotel.isAvailable = false;
+
+        Booking memory newBooking = Booking({
+            id: bookings.length + 1,
+            hotelId: _hotelId,
+            guest: msg.sender,
+            checkInDate: _checkInDate,
+            checkOutDate: _checkOutDate
+        });
+        bookings.push(newBooking);
+        guestBookings[msg.sender].push(newBooking);
+        emit BookingMade(newBooking.id, newBooking.hotelId, newBooking.guest, newBooking.checkInDate, newBooking.checkOutDate);
+    }
+
+    // 添加评价的函数
+    function addReview(uint _hotelId, string memory _content, uint _rating) public {
+        require(_rating > 0 && _rating <= 5, unicode"评价分数必须在1到5之间");
+
+        Review memory newReview = Review({
+            id: reviews.length + 1,
+            hotelId: _hotelId,
+            reviewer: msg.sender,
+            content: _content,
+            rating: _rating
+        });
+        reviews.push(newReview);
+        hotelReviews[_hotelId].push(newReview);
+        emit ReviewAdded(newReview.id, newReview.hotelId, newReview.reviewer, newReview.content, newReview.rating);
+    }
+
+    // 获取特定用户的预订记录
+    function getGuestBookings(address _guest) public view returns (Booking[] memory) {
+        return guestBookings[_guest];
+    }
+
+    // 获取特定酒店的评价记录
+    function getHotelReviews(uint _hotelId) public view returns (Review[] memory) {
+        return hotelReviews[_hotelId];
+    }
+
+    // 合约所有者可以提取合约中的资金
+    function withdrawFunds() public onlyOwner {
+        payable(owner).transfer(address(this).balance);
+    }
+}
